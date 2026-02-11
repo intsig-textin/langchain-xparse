@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langchain-xparse"
+version = "0.1.0"
+description = "LangChain integration with xParse Pipeline API for document parsing, chunking and embedding"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=1.0",
+    "httpx>=0.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-asyncio>=0.21",
+    "python-dotenv>=1.0",
+]
+
+[project.urls]
+Documentation = "https://docs.textin.com/pipeline/overview"
+API = "https://docs.textin.com/api-reference/endpoint/pipeline"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["langchain_xparse*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration (require XPARSE_APP_ID, XPARSE_SECRET_CODE)",
+]
