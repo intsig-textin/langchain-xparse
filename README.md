@@ -52,14 +52,14 @@ print(docs[0].metadata)  # source, category, element_id, filename, page_number, 
 
 ```python
 for doc in loader.lazy_load():
-    process(doc)
+    # process(doc)
 ```
 
 ### Async
 
 ```python
 async for doc in loader.alazy_load():
-    process(doc)
+    # process(doc)
 ```
 
 ### Convenience params (parse + chunk, or parse + chunk + embed)

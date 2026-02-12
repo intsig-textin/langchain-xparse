@@ -20,3 +20,6 @@ build/
 .vscode/
 *.swp
 *.swo
+
+# publish pypi
+publish/
