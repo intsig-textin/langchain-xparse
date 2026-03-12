@@ -1,6 +1,6 @@
 # langchain-xparse
 
-LangChain integration with [xParse Pipeline API](https://docs.textin.com/pipeline/overview) for document parsing, chunking and embedding. Supports parse / chunk / embed stages only (extract is not supported in this loader).
+LangChain integration with [xParse Pipeline API](https://docs.textin.com/api-reference/endpoint/pipeline) for document parsing, chunking and embedding. Supports parse / chunk / embed stages only (extract is not supported in this loader).
 
 ## Installation
 
