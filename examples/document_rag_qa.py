@@ -14,6 +14,8 @@ examples/document_rag_qa.py
 1. 安装依赖：
    - 核心：
      pip install langchain-xparse langchain-core langchain-community
+   - 向量库（本示例默认使用 FAISS，本地运行最简单）：
+     pip install faiss-cpu
    - 通义千问（阿里云 DashScope）：
      pip install dashscope
    - 可选：自动读取 .env
