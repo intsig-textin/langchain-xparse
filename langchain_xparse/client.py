@@ -1,4 +1,4 @@
-"""xParse Pipeline API client: auth, request/response handling, sync and async."""
+"""xParse Parse Sync API client: auth, request/response handling, sync and async."""
 
 from __future__ import annotations
 
@@ -8,12 +8,16 @@ from typing import Any
 import httpx
 
 DEFAULT_BASE_URL = "https://api.textin.com"
-PIPELINE_PATH = "/api/xparse/pipeline"
-DEFAULT_STAGES = [{"type": "parse", "config": {"provider": "textin"}}]
+PARSE_SYNC_PATH = "/api/v1/xparse/parse/sync"
+DEFAULT_CONFIG: dict[str, Any] = {
+    "capabilities": {
+        "include_hierarchy": True,
+    }
+}
 
 
 class XParseAPIError(Exception):
-    """Raised when the Pipeline API returns code != 200."""
+    """Raised when the Parse API returns code != 200."""
 
     def __init__(self, code: int, message: str, *args: Any, **kwargs: Any) -> None:
         self.code = code
@@ -21,8 +25,8 @@ class XParseAPIError(Exception):
         super().__init__(code, message, *args, **kwargs)
 
 
-class PipelineClient:
-    """Client for xParse Pipeline API (sync and async)."""
+class ParseClient:
+    """Client for xParse Parse Sync API (sync and async)."""
 
     def __init__(
         self,
@@ -39,9 +43,9 @@ class PipelineClient:
         }
 
     def _url(self) -> str:
-        return f"{self.base_url}{PIPELINE_PATH}"
+        return f"{self.base_url}{PARSE_SYNC_PATH}"
 
-    def _parse_response(self, response: httpx.Response) -> list[dict[str, Any]]:
+    def _parse_response(self, response: httpx.Response) -> dict[str, Any]:
         try:
             data = response.json()
         except Exception as e:
@@ -53,39 +57,36 @@ class PipelineClient:
         msg = data.get("message", "")
         if code != 200:
             raise XParseAPIError(code, msg or f"HTTP {response.status_code}")
-        # API may return elements at top level or nested in 'data' field
-        elements = data.get("elements")
-        if elements is None and "data" in data and isinstance(data["data"], dict):
-            elements = data["data"].get("elements")
-        return elements or []
+        # Return the data object containing elements, markdown, etc.
+        return data.get("data", {})
 
-    def run_pipeline(
+    def parse(
         self,
         file_content: bytes,
         filename: str,
-        stages: list[dict[str, Any]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Execute the pipeline (sync). Returns list of elements."""
-        stages = stages or DEFAULT_STAGES
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute document parsing (sync). Returns parsed data with elements."""
+        config = config or DEFAULT_CONFIG
         url = self._url()
         files = {"file": (filename, file_content)}
-        data = {"stages": json.dumps(stages)}
+        data = {"config": json.dumps(config)}
         with httpx.Client(timeout=120.0) as client:
             resp = client.post(url, headers=self._headers, files=files, data=data)
         resp.raise_for_status()
         return self._parse_response(resp)
 
-    async def arun_pipeline(
+    async def aparse(
         self,
         file_content: bytes,
         filename: str,
-        stages: list[dict[str, Any]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Execute the pipeline (async). Returns list of elements."""
-        stages = stages or DEFAULT_STAGES
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute document parsing (async). Returns parsed data with elements."""
+        config = config or DEFAULT_CONFIG
         url = self._url()
         files = {"file": (filename, file_content)}
-        data = {"stages": json.dumps(stages)}
+        data = {"config": json.dumps(config)}
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, headers=self._headers, files=files, data=data)
         resp.raise_for_status()

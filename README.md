@@ -1,6 +1,6 @@
 # langchain-xparse
 
-LangChain integration with [xParse Pipeline API](https://docs.textin.com/api-reference/endpoint/pipeline) for document parsing, chunking and embedding. Supports parse / chunk / embed stages only (extract is not supported in this loader).
+LangChain integration with [xParse Parse API](https://docs.textin.com/api-reference/endpoint/xparse/v1/parse-sync) for intelligent document parsing. Converts unstructured documents (PDF, images, Word, Excel, PPT, etc.) into AI-friendly structured data (JSON, Markdown) with rich metadata.
 
 ## Installation
 
@@ -10,15 +10,9 @@ From PyPI:
 pip install langchain-xparse
 ```
 
-Local editable install:
-
-```bash
-pip install -e .
-```
-
 ## Configuration
 
-Set your TextIn credentials (from [Textin Workspace](https://www.textin.com/console/dashboard/setting) ):
+Set your TextIn credentials (from [Textin Workspace](https://www.textin.com/console/dashboard/setting)):
 
 ```bash
 export XPARSE_APP_ID="your-app-id"
@@ -37,7 +31,7 @@ loader = XParseLoader(
 
 ## Usage
 
-### Basic (parse only)
+### Basic Usage
 
 ```python
 from langchain_xparse import XParseLoader
@@ -45,66 +39,70 @@ from langchain_xparse import XParseLoader
 loader = XParseLoader(file_path="example.pdf")
 docs = loader.load()
 print(docs[0].page_content[:200])
-print(docs[0].metadata)  # source, category, element_id, filename, page_number, ...
+print(docs[0].metadata)  # source, category, element_id, filename, page_number
 ```
 
-### Lazy load
+### Lazy Load
 
 ```python
 for doc in loader.lazy_load():
-    # process(doc)
+    # process each document
+    print(doc.page_content[:100])
 ```
 
-### Async
+### Async Load
 
 ```python
 async for doc in loader.alazy_load():
-    # process(doc)
+    # process each document asynchronously
+    print(doc.page_content[:100])
 ```
 
-### Convenience params (parse + chunk, or parse + chunk + embed)
+### Custom Parse Configuration
+
+Customize parsing behavior using the `config` parameter. See [Parse Config Documentation](https://docs.textin.com/xparse/v1/parse-config) for details.
 
 ```python
 loader = XParseLoader(
     file_path="doc.pdf",
-    parse_provider="textin",
-    chunk_strategy="by_title",
-    chunk_max_characters=500,
-    chunk_overlap=50,
-)
-# Or with embed:
-loader = XParseLoader(
-    file_path="doc.pdf",
-    parse_provider="textin",
-    chunk_strategy="basic",
-    chunk_max_characters=1000,
-    embed_provider="qwen",
-    embed_model_name="text-embedding-v4",
+    config={
+        "document": {
+            "password": "pdf-password"  # For encrypted PDFs
+        },
+        "capabilities": {
+            "include_hierarchy": True,         # Include parent-child relationships
+            "include_inline_objects": True,    # Extract formulas, handwriting, etc.
+            "include_table_structure": True,   # Detailed table structure
+            "include_char_details": True,      # Character-level details
+            "include_image_data": True,        # Image URLs and data
+            "pages": True,                     # Page metadata
+            "title_tree": True,                # Document outline/TOC
+            "table_view": "html"               # Table format: "html" or "markdown"
+        },
+        "scope": {
+            "page_range": "1-10"               # Process specific pages
+        },
+        "config": {
+            "force_engine": "textin",          # Engine selection (expert mode)
+            "engine_params": {
+                "formula_level": 0,
+                "image_output_type": "url"
+            }
+        }
+    }
 )
 docs = loader.load()
 ```
 
-### Custom stages (advanced)
+### Multiple Files
 
 ```python
-loader = XParseLoader(
-    file_path="doc.pdf",
-    stages=[
-        {"type": "parse", "config": {"provider": "textin"}},
-        {"type": "chunk", "config": {"strategy": "by_page", "max_characters": 800}},
-    ],
-)
-```
-
-### Multiple files
-
-```python
-loader = XParseLoader(file_path=["a.pdf", "b.pdf"])
+loader = XParseLoader(file_path=["a.pdf", "b.pdf", "c.docx"])
 for doc in loader.lazy_load():
-    print(doc.metadata.get("source"), doc.page_content[:50])
+    print(f"{doc.metadata.get('source')}: {doc.page_content[:50]}")
 ```
 
-### File-like object
+### File-like Object
 
 When passing a file-like object instead of a path, you must set `metadata_filename`:
 
@@ -114,7 +112,21 @@ with open("doc.pdf", "rb") as f:
     docs = loader.load()
 ```
 
+## Document Metadata
+
+Each loaded document includes rich metadata:
+
+- `source`: File path or filename
+- `category`: Element type (Title, NarrativeText, Table, Image, Formula, etc.)
+- `element_id`: Unique element identifier
+- `filename`: Original filename
+- `page_number`: Page number (if available)
+- `parent_id`: Parent element ID (with `include_hierarchy`)
+- `children_ids`: Child element IDs (with `include_hierarchy`)
+- Additional element-specific metadata
+
 ## References
 
-- [xParse overview](https://docs.textin.com/pipeline/overview)
-- [Pipeline API](https://docs.textin.com/api-reference/endpoint/pipeline)
+- [xParse Parse API](https://docs.textin.com/api-reference/endpoint/xparse/v1/parse-sync) - API endpoint documentation
+- [Parse Config](https://docs.textin.com/xparse/v1/parse-config) - Configuration parameters
+- [Parse Response](https://docs.textin.com/xparse/v1/parse-response) - Response structure and fields

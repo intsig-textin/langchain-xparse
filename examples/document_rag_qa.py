@@ -2,7 +2,7 @@
 examples/document_rag_qa.py
 
 演示如何结合 langchain-xparse + LangChain 框架，
-实现一个最简单的“基于本地文档的问答（RAG）”示例。
+实现一个最简单的"基于本地文档的问答（RAG）"示例。
 使用国内可用的通义千问（Qwen）模型，避免 OpenAI 在国内的连接问题。
 
 一键运行方式：
@@ -13,7 +13,7 @@ examples/document_rag_qa.py
 
 1. 安装依赖：
    - 核心：
-     pip install langchain-xparse langchain-core langchain-community
+     pip install langchain-xparse langchain-core langchain-community langchain-text-splitters
    - 向量库（本示例默认使用 FAISS，本地运行最简单）：
      pip install faiss-cpu
    - 通义千问（阿里云 DashScope）：
@@ -35,9 +35,10 @@ examples/document_rag_qa.py
    - example_docs/layout-parser-paper.pdf
 
 脚本做的事情：
-1. 使用 XParseLoader 调用 xParse Pipeline API，对 PDF 做解析 + 按标题切分 chunk。
-2. 使用通义千问 Embeddings（DashScope）+ FAISS 向量库，将 chunk 构建成检索索引。
-3. 使用通义千问大模型（ChatTongyi）+ LCEL，对用户问题进行基于文档的回答。
+1. 使用 XParseLoader 调用 xParse Parse API，对 PDF 进行智能解析。
+2. 使用 LangChain 的 RecursiveCharacterTextSplitter 对解析结果进行分块。
+3. 使用通义千问 Embeddings（DashScope）+ FAISS 向量库，将 chunk 构建成检索索引。
+4. 使用通义千问大模型（ChatTongyi）+ LCEL，对用户问题进行基于文档的回答。
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnableSerializable
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_xparse import XParseLoader
 
 # 可选：优先尝试从 .env 加载 XPARSE_APP_ID / XPARSE_SECRET_CODE
@@ -78,34 +80,47 @@ def build_qa_chain() -> RunnableSerializable | None:
     使用 XParseLoader + LangChain 构建一个最简单的基于文档的问答链。
 
     流程说明：
-    1. XParseLoader 调用 xParse，将 PDF 解析为多个 chunk（LangChain Document）。
-    2. 使用通义千问 Embeddings（DashScope）对每个 chunk 做向量化。
-    3. 使用 FAISS 构建向量索引。
-    4. 使用通义千问大模型（ChatTongyi）+ LCEL，在检索到的 chunk 上做问答。
+    1. XParseLoader 调用 xParse Parse API，将 PDF 解析为结构化元素（LangChain Document）。
+    2. 使用 RecursiveCharacterTextSplitter 对文档进行分块。
+    3. 使用通义千问 Embeddings（DashScope）对每个 chunk 做向量化。
+    4. 使用 FAISS 构建向量索引。
+    5. 使用通义千问大模型（ChatTongyi）+ LCEL，在检索到的 chunk 上做问答。
     """
 
-    print_separator("步骤 1：加载并切分 PDF（使用 XParseLoader）")
+    print_separator("步骤 1：加载 PDF（使用 XParseLoader）")
 
     if not EXAMPLE_PDF.exists():
         print(f"示例 PDF 不存在，请检查路径：{EXAMPLE_PDF}")
         return None
 
-    # 这里使用“按标题”分段策略，适合论文 / 报告类文档。
+    # 使用默认配置解析 PDF
     loader = XParseLoader(
         file_path=str(EXAMPLE_PDF),
-        parse_provider="textin",
-        chunk_strategy="by_title",
-        chunk_max_characters=800,
-        chunk_overlap=100,
+        config={
+            "capabilities": {
+                "include_hierarchy": True,  # 包含层级关系
+            }
+        },
     )
     docs = loader.load()
-    print(f"✅ 解析并切分完成，共得到 {len(docs)} 个 chunk（Document）")
+    print(f"✅ 解析完成，共得到 {len(docs)} 个元素（Document）")
 
     if not docs:
         print("文档列表为空，请检查 xParse 配置或示例文件。")
         return None
 
-    print_separator("步骤 2：构建向量索引（通义千问 Embeddings + FAISS）")
+    print_separator("步骤 2：文档分块（使用 RecursiveCharacterTextSplitter）")
+
+    # 使用 LangChain 的文本分割器进行分块
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=100,
+        length_function=len,
+    )
+    chunks = text_splitter.split_documents(docs)
+    print(f"✅ 分块完成，共得到 {len(chunks)} 个 chunk")
+
+    print_separator("步骤 3：构建向量索引（通义千问 Embeddings + FAISS）")
 
     if not os.getenv("DASHSCOPE_API_KEY"):
         print(
@@ -116,12 +131,12 @@ def build_qa_chain() -> RunnableSerializable | None:
 
     # 通义千问文本向量模型，国内可直接访问。可选：text-embedding-v3, text-embedding-v2 等
     embeddings = DashScopeEmbeddings(model="text-embedding-v3")
-    vector_store = FAISS.from_documents(docs, embeddings)
+    vector_store = FAISS.from_documents(chunks, embeddings)
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 
     print("✅ 向量索引构建完成。")
 
-    print_separator("步骤 3：构建问答链（通义千问 ChatTongyi + LCEL）")
+    print_separator("步骤 4：构建问答链（通义千问 ChatTongyi + LCEL）")
 
     # 通义千问大模型，国内可直接访问。qwen-plus 效果与成本平衡；可选 qwen-turbo（更快）、qwen-max（更强）
     llm = ChatTongyi(model="qwen-plus", temperature=0.1)

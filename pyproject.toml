@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "langchain-xparse"
-version = "1.0.0"
-description = "LangChain integration with xParse Pipeline API for document parsing, chunking and embedding"
+version = "1.2.0"
+description = "LangChain integration with xParse Parse API for intelligent document parsing"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -31,7 +31,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/intsig-textin/langchain-xparse"
 Source = "https://github.com/intsig-textin/langchain-xparse"
-Documentation = "https://docs.textin.com/pipeline/overview"
+Documentation = "https://docs.textin.com/api-reference/endpoint/xparse/v1/parse-sync"
 "Bug Tracker" = "https://github.com/intsig-textin/langchain-xparse/issues"
 
 [tool.setuptools.packages.find]

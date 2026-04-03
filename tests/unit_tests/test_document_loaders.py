@@ -7,62 +7,8 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from langchain_core.documents import Document
 
-from langchain_xparse.client import PipelineClient
-from langchain_xparse.document_loaders import (
-    XParseLoader,
-    _SingleDocumentLoader,
-    _build_stages,
-)
-
-
-# --- _build_stages ---
-
-
-def test_build_stages_default_parse_only() -> None:
-    stages = _build_stages()
-    assert stages == [{"type": "parse", "config": {"provider": "textin"}}]
-
-
-def test_build_stages_parse_provider() -> None:
-    stages = _build_stages(parse_provider="mineru")
-    assert stages == [{"type": "parse", "config": {"provider": "mineru"}}]
-
-
-def test_build_stages_with_chunk() -> None:
-    stages = _build_stages(
-        chunk_strategy="by_title",
-        chunk_max_characters=500,
-        chunk_overlap=50,
-    )
-    assert len(stages) == 2
-    assert stages[0]["type"] == "parse"
-    assert stages[1]["type"] == "chunk"
-    assert stages[1]["config"]["strategy"] == "by_title"
-    assert stages[1]["config"]["max_characters"] == 500
-    assert stages[1]["config"]["overlap"] == 50
-
-
-def test_build_stages_with_embed() -> None:
-    stages = _build_stages(
-        embed_provider="qwen",
-        embed_model_name="text-embedding-v4",
-    )
-    assert len(stages) == 2
-    assert stages[0]["type"] == "parse"
-    assert stages[1]["type"] == "embed"
-    assert stages[1]["config"]["provider"] == "qwen"
-    assert stages[1]["config"]["model_name"] == "text-embedding-v4"
-
-
-def test_build_stages_chunk_and_embed() -> None:
-    stages = _build_stages(
-        chunk_strategy="basic",
-        chunk_max_characters=1000,
-        embed_provider="doubao",
-        embed_model_name="doubao-embedding-text-240715",
-    )
-    assert len(stages) == 3
-    assert [s["type"] for s in stages] == ["parse", "chunk", "embed"]
+from langchain_xparse.client import ParseClient
+from langchain_xparse.document_loaders import XParseLoader, _SingleDocumentLoader
 
 
 # --- XParseLoader init ---
@@ -76,7 +22,7 @@ def test_loader_initializes_with_file_path(monkeypatch: pytest.MonkeyPatch) -> N
     assert loader.file is None
     assert loader._app_id == ""
     assert loader._secret_code == ""
-    assert loader._stages == [{"type": "parse", "config": {"provider": "textin"}}]
+    assert "capabilities" in loader._config
 
 
 def test_loader_initializes_with_env_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,15 +45,17 @@ def test_loader_raises_when_file_without_metadata_filename() -> None:
     assert "metadata_filename" in str(e.value)
 
 
-def test_loader_uses_stages_when_provided(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_loader_uses_config_when_provided(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XPARSE_APP_ID", "id")
     monkeypatch.setenv("XPARSE_SECRET_CODE", "secret")
-    custom = [
-        {"type": "parse", "config": {"provider": "textin-lite"}},
-        {"type": "chunk", "config": {"strategy": "by_page"}},
-    ]
-    loader = XParseLoader(file_path="a.pdf", stages=custom)
-    assert loader._stages == custom
+    custom = {
+        "capabilities": {
+            "include_hierarchy": True,
+            "include_table_structure": True,
+        }
+    }
+    loader = XParseLoader(file_path="a.pdf", config=custom)
+    assert loader._config == custom
 
 
 # --- _SingleDocumentLoader _file_content ---
@@ -116,11 +64,11 @@ def test_loader_uses_stages_when_provided(monkeypatch: pytest.MonkeyPatch) -> No
 def test_single_loader_gets_content_from_file() -> None:
     mock_file = Mock()
     mock_file.read.return_value = b"file content"
-    client = Mock(spec=PipelineClient)
+    client = Mock(spec=ParseClient)
     loader = _SingleDocumentLoader(
         client=client,
         file=mock_file,
-        stages=[{"type": "parse", "config": {"provider": "textin"}}],
+        config={"capabilities": {"include_hierarchy": True}},
         metadata_filename="fake.txt",
     )
     assert loader._file_content() == b"file content"
@@ -130,21 +78,21 @@ def test_single_loader_gets_content_from_file() -> None:
 @patch("builtins.open", create=True, new_callable=MagicMock)
 def test_single_loader_gets_content_from_file_path(mock_open_fn: MagicMock) -> None:
     mock_open_fn.return_value.__enter__.return_value.read.return_value = b"path content"
-    client = Mock(spec=PipelineClient)
+    client = Mock(spec=ParseClient)
     loader = _SingleDocumentLoader(
         client=client,
         file_path="dummy.pdf",
-        stages=[{"type": "parse", "config": {"provider": "textin"}}],
+        config={"capabilities": {"include_hierarchy": True}},
     )
     assert loader._file_content() == b"path content"
     mock_open_fn.assert_called_once_with("dummy.pdf", "rb")
 
 
 def test_single_loader_raises_without_file_or_path() -> None:
-    client = Mock(spec=PipelineClient)
+    client = Mock(spec=ParseClient)
     loader = _SingleDocumentLoader(
         client=client,
-        stages=[{"type": "parse", "config": {"provider": "textin"}}],
+        config={"capabilities": {"include_hierarchy": True}},
     )
     with pytest.raises(ValueError) as e:
         loader._file_content()
@@ -178,12 +126,15 @@ def test_lazy_load_yields_documents_with_metadata(
     sample_elements: list[dict[str, Any]],
 ) -> None:
     mock_open_fn.return_value.__enter__.return_value.read.return_value = b"path content"
-    client = Mock(spec=PipelineClient)
-    client.run_pipeline.return_value = sample_elements
+    client = Mock(spec=ParseClient)
+    client.parse.return_value = {
+        "elements": sample_elements,
+        "metadata": {"filename": "test.pdf", "page_count": 2},
+    }
     loader = _SingleDocumentLoader(
         client=client,
         file_path="/path/to/doc.pdf",
-        stages=[{"type": "parse", "config": {"provider": "textin"}}],
+        config={"capabilities": {"include_hierarchy": True}},
     )
     docs = list(loader.lazy_load())
     assert len(docs) == 2
@@ -195,23 +146,26 @@ def test_lazy_load_yields_documents_with_metadata(
     assert docs[0].metadata["page_number"] == 1
     assert docs[1].page_content == "Second."
     assert docs[1].metadata["category"] == "Title"
-    client.run_pipeline.assert_called_once()
-    call_args = client.run_pipeline.call_args
+    client.parse.assert_called_once()
+    call_args = client.parse.call_args
     assert call_args[0][0] == b"path content"
     assert call_args[0][1] == "doc.pdf"
-    assert call_args[0][2] == [{"type": "parse", "config": {"provider": "textin"}}]
+    assert call_args[0][2] == {"capabilities": {"include_hierarchy": True}}
 
 
 def test_lazy_load_applies_post_processors(sample_elements: list[dict[str, Any]]) -> None:
     def suffix(t: str) -> str:
         return t + "!"
 
-    client = Mock(spec=PipelineClient)
-    client.run_pipeline.return_value = sample_elements
+    client = Mock(spec=ParseClient)
+    client.parse.return_value = {
+        "elements": sample_elements,
+        "metadata": {"filename": "test.pdf"},
+    }
     loader = _SingleDocumentLoader(
         client=client,
         file_path="doc.pdf",
-        stages=[{"type": "parse", "config": {"provider": "textin"}}],
+        config={"capabilities": {"include_hierarchy": True}},
         post_processors=[suffix],
     )
     with patch("builtins.open", create=True, new_callable=MagicMock) as m:
@@ -230,7 +184,8 @@ def test_xparse_loader_lazy_load_single_file(
     mock_open.return_value.__enter__.return_value.read.return_value = b"x"
     monkeypatch.setenv("XPARSE_APP_ID", "id")
     monkeypatch.setenv("XPARSE_SECRET_CODE", "secret")
-    with patch.object(PipelineClient, "run_pipeline", return_value=sample_elements):
+    mock_result = {"elements": sample_elements, "metadata": {"filename": "test.pdf"}}
+    with patch.object(ParseClient, "parse", return_value=mock_result):
         loader = XParseLoader(file_path="single.pdf")
         docs = list(loader.lazy_load())
     assert len(docs) == 2
@@ -246,7 +201,8 @@ def test_xparse_loader_lazy_load_multiple_files(
     mock_open.return_value.__enter__.return_value.read.return_value = b"x"
     monkeypatch.setenv("XPARSE_APP_ID", "id")
     monkeypatch.setenv("XPARSE_SECRET_CODE", "secret")
-    with patch.object(PipelineClient, "run_pipeline", return_value=sample_elements):
+    mock_result = {"elements": sample_elements, "metadata": {"filename": "test.pdf"}}
+    with patch.object(ParseClient, "parse", return_value=mock_result):
         loader = XParseLoader(file_path=["a.pdf", "b.pdf"])
         docs = list(loader.lazy_load())
     assert len(docs) == 4  # 2 elements per file

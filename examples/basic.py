@@ -41,9 +41,9 @@ def print_separator(title: str) -> None:
     print("=" * 80)
 
 
-def basic_parse_only() -> None:
-    """最基础：只做 parse，把文档转成 LangChain 的 Document 列表。"""
-    print_separator("示例 1：Basic (parse only)")
+def basic_parse() -> None:
+    """最基础：使用默认配置解析 PDF。"""
+    print_separator("示例 1：基础解析（使用默认配置）")
 
     if not EXAMPLE_PDF.exists():
         print(f"示例 PDF 不存在，请检查路径：{EXAMPLE_PDF}")
@@ -52,7 +52,7 @@ def basic_parse_only() -> None:
     loader = XParseLoader(file_path=str(EXAMPLE_PDF))
     docs = loader.load()
 
-    print(f"共解析出 {len(docs)} 个 Document")
+    print(f"共解析出 {len(docs)} 个 Document（element）")
     if not docs:
         return
 
@@ -64,9 +64,9 @@ def basic_parse_only() -> None:
         print(f"  {k}: {v}")
 
 
-def parse_with_chunk() -> None:
-    """在 parse 的基础上开启 chunk，把长文档切成小段。"""
-    print_separator("示例 2：Parse + Chunk（按标题切分）")
+def parse_with_hierarchy() -> None:
+    """开启层级关系和表格结构解析。"""
+    print_separator("示例 2：开启层级关系和表格结构")
 
     if not EXAMPLE_PDF.exists():
         print(f"示例 PDF 不存在，请检查路径：{EXAMPLE_PDF}")
@@ -74,28 +74,31 @@ def parse_with_chunk() -> None:
 
     loader = XParseLoader(
         file_path=str(EXAMPLE_PDF),
-        parse_provider="textin",      # 解析使用 textin
-        chunk_strategy="by_title",    # 按标题分段
-        chunk_max_characters=500,     # 每段字符上限
-        chunk_overlap=50,             # 段之间的重叠字符数
+        config={
+            "capabilities": {
+                "include_hierarchy": True,         # 包含父子关系
+                "include_table_structure": True,   # 详细表格结构
+                "title_tree": True,                # 文档目录
+            }
+        },
     )
     docs = loader.load()
 
-    print(f"共解析并切分出 {len(docs)} 个 chunk（Document）")
+    print(f"共解析出 {len(docs)} 个 Document（element）")
     if not docs:
         return
 
-    first = docs[0]
-    print("\n第 1 个 chunk 文本前 300 字：")
-    print(first.page_content[:300])
-    print("\n第 1 个 chunk 元数据：")
-    for k, v in first.metadata.items():
-        print(f"  {k}: {v}")
+    # 查找包含 parent_id 的文档
+    for doc in docs[:5]:
+        if "parent_id" in doc.metadata:
+            print(f"\n元素 {doc.metadata.get('element_id')} 的父元素: {doc.metadata['parent_id']}")
+            print(f"文本: {doc.page_content[:100]}...")
+            break
 
 
-def parse_chunk_embed() -> None:
-    """演示 parse + chunk + embed（需要在 xParse 控制台开启对应 embed 能力）。"""
-    print_separator("示例 3：Parse + Chunk + Embed（如果已在控制台开通 embedding）")
+def parse_with_advanced_features() -> None:
+    """演示高级特性：内嵌对象、字符详情、图片数据。"""
+    print_separator("示例 3：高级特性（内嵌对象、字符详情、图片数据）")
 
     if not EXAMPLE_PDF.exists():
         print(f"示例 PDF 不存在，请检查路径：{EXAMPLE_PDF}")
@@ -103,35 +106,40 @@ def parse_chunk_embed() -> None:
 
     loader = XParseLoader(
         file_path=str(EXAMPLE_PDF),
-        parse_provider="textin",
-        chunk_strategy="basic",
-        chunk_max_characters=800,
-        # 这里的 provider / model_name 需要与你在 xParse 控制台中配置的一致
-        embed_provider="qwen",
-        embed_model_name="text-embedding-v4",
+        config={
+            "capabilities": {
+                "include_hierarchy": True,
+                "include_inline_objects": True,    # 提取公式、手写等内嵌对象
+                "include_char_details": False,     # 字符级详情（可选）
+                "include_image_data": True,        # 图片 URL 和数据
+                "pages": True,                     # 页面元信息
+            },
+            "scope": {
+                "page_range": "1-3"  # 只处理前 3 页
+            },
+        },
     )
     docs = loader.load()
 
-    print(f"共解析 / 切分 / 向量化出 {len(docs)} 个 Document")
+    print(f"共解析出 {len(docs)} 个 Document（element）")
     if not docs:
         return
 
-    first = docs[0]
-    print("\n第 1 个 Document 文本前 200 字：")
-    print(first.page_content[:200])
-    print("\n第 1 个 Document 元数据中的 embeddings 信息（如果存在）：")
-    if "embeddings" in first.metadata:
-        emb = first.metadata["embeddings"]
-        print(f"  向量维度：{len(emb)}，前 5 维：{emb[:5]}")
-    else:
-        print("  未返回 embeddings（请检查是否在控制台启用了 embedding 能力）")
+    # 查找包含内嵌对象的文档
+    for doc in docs:
+        if "has_inline_objects" in doc.metadata and doc.metadata["has_inline_objects"]:
+            print(f"\n找到包含内嵌对象的元素:")
+            print(f"  类型: {doc.metadata.get('category')}")
+            print(f"  内嵌对象类型: {doc.metadata.get('inline_object_types')}")
+            print(f"  文本: {doc.page_content[:200]}...")
+            break
 
 
 def main() -> None:
     print("当前示例 PDF 路径：", EXAMPLE_PDF)
-    basic_parse_only()
-    parse_with_chunk()
-    parse_chunk_embed()
+    basic_parse()
+    parse_with_hierarchy()
+    parse_with_advanced_features()
     print("\n示例运行结束。")
 
 

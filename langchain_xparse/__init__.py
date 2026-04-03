@@ -1,8 +1,8 @@
-"""LangChain integration with xParse Pipeline API."""
+"""LangChain integration with xParse Parse API."""
 
 from importlib import metadata
 
-from langchain_xparse.client import XParseAPIError
+from langchain_xparse.client import ParseClient, XParseAPIError
 from langchain_xparse.document_loaders import XParseLoader
 
 try:
@@ -14,6 +14,7 @@ except metadata.PackageNotFoundError:
         __version__ = ""
 
 __all__ = [
+    "ParseClient",
     "XParseAPIError",
     "XParseLoader",
     "__version__",
